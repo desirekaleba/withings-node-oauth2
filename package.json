@@ -1,0 +1,28 @@
+{
+  "name": "withings-node-oauth2",
+  "version": "1.0.0",
+  "description": "A NodeJS Client OAuth2 API for withings",
+  "main": "lib/index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/desirekaleba/withings-node-oauth2.git"
+  },
+  "keywords": [
+    "withings",
+    "oauth2",
+    "client-api",
+    "auth"
+  ],
+  "author": "Desire Kaleba <desirekaleba@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/desirekaleba/withings-node-oauth2/issues"
+  },
+  "homepage": "https://github.com/desirekaleba/withings-node-oauth2#readme",
+  "dependencies": {
+    "axios": "^0.27.2"
+  }
+}
