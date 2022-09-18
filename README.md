@@ -235,5 +235,55 @@ server.listen(PORT);
 ### ExpressJS
 
 ```js
+const express = require('express');
+const WithingsNodeOauth2 = require('withings-node-oauth2');
+const session = require('express-session');
+require('dotenv').config();
+
+const app = express();
+
+app.use(express.json());
+app.use(session({
+    secret: process.env.SESSION_SECRET,
+    resave: true,
+    saveUninitialized: true
+}));
+
+const PORT = process.env.PORT || 3000;
+
+const client = new WithingsNodeOauth2({
+    clientId: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    callbackURL: process.env.CALLBACK_URL
+});
+
+app.get('/authorize', (req, res) => {
+    res.redirect(client.getAuthorizeURL("", "info, activity, metrics"));
+});
+
+app.get('/callback', (req, res) => {
+    client.getAccessToken(req.query.code)
+        .then(result => {
+            req.session.withings = {
+                accessToken: result.body.access_token,
+                refreshToken: result.body.refresh_token,
+                userId: result.body.userid
+            };
+            res.status(200).json(result);
+        }).catch(error => {
+            res.status(error.status).json(error)
+        });
+});
+
+app.get('/activity', (req, res) => {
+    client.getUserActivities(req.session.withings.accessToken)
+        .then(result => {
+            res.status(200).json(result);
+        }).catch(error => {
+            res.status(error.status).json(error);
+        });
+});
+
+app.listen(PORT);
 
 ```
