@@ -24,5 +24,16 @@
   "homepage": "https://github.com/desirekaleba/withings-node-oauth2#readme",
   "dependencies": {
     "axios": "^0.27.2"
-  }
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^17.1.2",
+    "@commitlint/config-conventional": "^17.1.0",
+    "audit-ci": "^6.3.0",
+    "husky": "^8.0.1",
+    "lint-staged": "^13.0.3"
+  },
+  "lint-staged": {
+    "*.ts": "eslint",
+    "*.js": "eslint"
+ }
 }
