@@ -200,7 +200,7 @@ const PORT = process.env.PORT || 5000;
 const server = http.createServer((req, res) => {
     if (req.url === '/authorize' && req.method === 'GET') {
         res.writeHead(200, {'Content-Type': 'application/json'});
-        res.write((client.getAuthorizeURL("", "info, activity, metrics"));
+        res.write(client.getAuthorizeURL("", "info, activity, metrics"));
         res.end();
     } else if (req.url.startsWith('/callback') && req.method === 'GET') {
         const { code } = url.parse(req.url, true).query;
