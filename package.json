@@ -24,9 +24,6 @@
     "url": "https://github.com/desirekaleba/withings-node-oauth2/issues"
   },
   "homepage": "https://github.com/desirekaleba/withings-node-oauth2#readme",
-  "dependencies": {
-    "axios": "^1.6.0"
-  },
   "devDependencies": {
     "@commitlint/cli": "^17.1.2",
     "@commitlint/config-conventional": "^17.1.0",
