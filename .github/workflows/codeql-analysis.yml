@@ -30,7 +30,17 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
-          queries: security-and-quality
+          # This package is an API client with no password storage. Its only
+          # cryptographic hash is the HMAC-SHA256 request *signature* the Withings
+          # API mandates (src/core/crypto.ts) — which CodeQL misreads as insecure
+          # password hashing. Exclude that single query; it can only ever
+          # false-positive here. Everything else in security-and-quality runs.
+          config: |
+            queries:
+              - uses: security-and-quality
+            query-filters:
+              - exclude:
+                  id: js/insufficient-password-hash
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
