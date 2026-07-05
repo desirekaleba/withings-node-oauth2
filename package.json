@@ -95,6 +95,7 @@
     "eslint": "^10.6.0",
     "eslint-config-prettier": "^10.1.8",
     "express": "^5.0.0",
+    "express-rate-limit": "^7.4.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
     "prettier": "^3.9.4",

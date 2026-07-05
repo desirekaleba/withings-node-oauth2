@@ -13,6 +13,7 @@
 import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import express, { type Request, type Response } from "express";
+import rateLimit from "express-rate-limit";
 import "dotenv/config";
 import {
   WithingsClient,
@@ -141,6 +142,10 @@ function page(title: string, body: string): string {
 }
 
 const app = express();
+
+// Rate-limit every route — a good habit for anything touching auth, and what
+// you'd want in production. (Also satisfies CodeQL's missing-rate-limiting rule.)
+app.use(rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: true }));
 
 app.get("/authorize", (_req: Request, res: Response) => {
   res.redirect(wc.oauth.authorizeUrl({ scope: SCOPES, state: randomUUID() }));
