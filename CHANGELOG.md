@@ -4,6 +4,14 @@ All notable changes to this project are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/) and
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.1.1](https://github.com/desirekaleba/withings-node-oauth2/compare/withings-node-oauth2-v2.1.0...withings-node-oauth2-v2.1.1) (2026-07-05)
+
+
+### Bug Fixes
+
+* **goals:** normalize empty goals to an object ([bafcf4a](https://github.com/desirekaleba/withings-node-oauth2/commit/bafcf4acdbf70ea3a9e0e8705697a4e58cf71b00))
+* **goals:** normalize empty goals to an object ([a452d71](https://github.com/desirekaleba/withings-node-oauth2/commit/a452d7105184f12d97593f115856aa0abbc5434c))
+
 ## [2.1.0](https://github.com/desirekaleba/withings-node-oauth2/compare/withings-node-oauth2-v2.0.0...withings-node-oauth2-v2.1.0) (2026-07-05)
 
 
