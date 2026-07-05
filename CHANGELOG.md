@@ -4,6 +4,16 @@ All notable changes to this project are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/) and
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.1.0](https://github.com/desirekaleba/withings-node-oauth2/compare/withings-node-oauth2-v2.0.0...withings-node-oauth2-v2.1.0) (2026-07-05)
+
+
+### Features
+
+* **api:** typed models and namespaced resources with pagination ([68d3fe8](https://github.com/desirekaleba/withings-node-oauth2/commit/68d3fe8c4d654eb4bddc6b3256ebf1938b84b35b))
+* **auth:** token manager with rotation, auto-refresh and pluggable store ([357c70f](https://github.com/desirekaleba/withings-node-oauth2/commit/357c70f420dc21dddc2c0a1ba4f9c52827d6f746))
+* **core:** layered HTTP core with retry, signing and rate limiting ([15dbf03](https://github.com/desirekaleba/withings-node-oauth2/commit/15dbf0339ed8e9e4c8db01cab4647f97a519afcc))
+* WithingsClient composition root and public API ([a654f5d](https://github.com/desirekaleba/withings-node-oauth2/commit/a654f5d70daf2c3bcfe74032251740c21ece3e61))
+
 ## [2.0.0] - 2026-07-05
 
 A ground-up TypeScript rewrite. Same concepts, a cleaner and safer surface.

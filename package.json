@@ -1,6 +1,6 @@
 {
   "name": "withings-node-oauth2",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "A modern, fully-typed, zero-dependency Node.js client for the Withings OAuth2 Health Data & Notify (webhook) API.",
   "type": "module",
   "main": "./dist/cjs/index.js",
