@@ -1,289 +1,477 @@
+<div align="center">
+
 # withings-node-oauth2
 
-> An OAuth2 API client library for Withings
+**The modern, fully-typed, zero-dependency Node.js client for the [Withings](https://developer.withings.com) OAuth2 Health Data & Notify (webhook) API.**
 
-## Getting started
+[![npm version](https://img.shields.io/npm/v/withings-node-oauth2.svg?logo=npm&color=cb3837)](https://www.npmjs.com/package/withings-node-oauth2)
+[![npm downloads](https://img.shields.io/npm/dm/withings-node-oauth2.svg?color=blue)](https://www.npmjs.com/package/withings-node-oauth2)
+[![CI](https://github.com/desirekaleba/withings-node-oauth2/actions/workflows/ci.yml/badge.svg)](https://github.com/desirekaleba/withings-node-oauth2/actions/workflows/ci.yml)
+[![Types](https://img.shields.io/npm/types/withings-node-oauth2.svg?logo=typescript)](https://www.npmjs.com/package/withings-node-oauth2)
+[![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](https://www.npmjs.com/package/withings-node-oauth2?activeTab=dependencies)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](./LICENSE)
 
-Install the library from npm
+</div>
+
+---
+
+`withings-node-oauth2` handles the tricky parts of the Withings API for you — the
+nonce + HMAC signature handshake, OAuth2 token exchange, **automatic token
+refresh**, rotating refresh tokens, retries with backoff, rate-limit handling,
+pagination, and the Notify (webhook) flow — behind a small, strongly-typed,
+namespaced surface. It ships as dual **ESM + CommonJS** with first-class
+TypeScript types and **no runtime dependencies** (native `fetch`, Node 20+).
+
+```ts
+const wc = new WithingsClient({ clientId, clientSecret, callbackURL });
+await wc.oauth.exchangeCode(code);
+for await (const night of wc.sleep.paginate()) {
+  console.log(night.date, night.data.sleep_score);
+}
+```
+
+## Features
+
+- 🧭 **Namespaced, resource-oriented API** — `wc.measures`, `wc.sleep`,
+  `wc.notify`, … over a clean layered core.
+- 🔐 **Full OAuth2 flow** — authorize URL, code exchange, and refresh, with the
+  nonce/signature handshake handled automatically.
+- ♻️ **Automatic token refresh** — refreshes proactively before expiry and
+  transparently after a server-side `401`, persisting rotated tokens.
+- 🔁 **Pagination as async iterators** — `for await (… of wc.measures.paginate())`
+  transparently follows Withings' `more`/`offset` cursor.
+- 🔔 **Notify / webhooks** — subscribe, list, get, update, revoke, with typed
+  `appli` categories.
+- 🧰 **Precise typed errors** — `WithingsError` + `Auth` / `RateLimit` /
+  `Timeout` / `Network` / `Abort` subclasses instead of opaque `{ status }`.
+- 🚦 **Resilient by default** — retries transient failures with backoff + jitter,
+  honors `Retry-After`, and an opt-in client-side rate limiter to avoid `601`s.
+- 🧩 **Composable & testable** — inject a `Transport`, `TokenStore`, or `Clock`;
+  observe everything through `onRequest` / `onResponse` / `onRetry` hooks.
+- 📈 **Fully typed responses** — real models for measures, activity, sleep,
+  workouts, heart/ECG, devices, and goals.
+- 🪶 **Zero dependencies** — native `fetch`, ESM + CJS, tree-shakeable.
+
+## Table of contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Architecture](#architecture)
+- [Authentication & token management](#authentication--token-management)
+- [Resources](#resources)
+- [Pagination](#pagination)
+- [Notify / webhooks](#notify--webhooks)
+- [Error handling](#error-handling)
+- [Utilities](#utilities)
+- [Configuration](#configuration)
+- [Extending: transport, storage, hooks](#extending-transport-storage-hooks)
+- [Framework example (Express)](#framework-example-express)
+- [Migrating from v1](#migrating-from-v1)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Install
+
 ```sh
 npm install withings-node-oauth2
+# or: pnpm add / yarn add
 ```
 
-## API
+> **Requirements:** Node.js **20+** (uses the built-in `fetch`). Works in ESM
+> and CommonJS. You'll need Withings app credentials — see
+> [Create your developer account](https://developer.withings.com/developer-guide/v3/integration-guide/public-health-data-api/developer-account/create-your-accesses-no-medical-cloud).
 
-### Constructor
+## Quick start
+
+```ts
+import { WithingsClient, Scope, MeasureType } from "withings-node-oauth2";
+
+const wc = new WithingsClient({
+  clientId: process.env.WITHINGS_CLIENT_ID!,
+  clientSecret: process.env.WITHINGS_CLIENT_SECRET!,
+  callbackURL: process.env.WITHINGS_CALLBACK_URL!,
+});
+
+// 1. Send the user to Withings to authorize your app.
+const authorizeUrl = wc.oauth.authorizeUrl({
+  scope: [Scope.Activity, Scope.Metrics],
+  state: "csrf-token",
+});
+
+// 2. Withings redirects back to callbackURL with ?code=…&state=…
+//    Exchange the code (tokens are stored on the client).
+await wc.oauth.exchangeCode(code);
+
+// 3. Call the API. Tokens auto-refresh when they expire.
+const { measuregrps } = await wc.measures.list({ types: [MeasureType.Weight] });
+const { devices } = await wc.devices.list();
+```
+
+<details>
+<summary>CommonJS</summary>
 
 ```js
-new WithingsNodeOauth2({
-    clientId: "YOUR-WITHINGS-CLIENT-ID",
-    clientSecret: "YOUR-WITHINGS-CLIENT-SECRET",
-    callbackURL: "YOUR-WITHINGS-CALLBACK-URL"
+const { WithingsClient, Scope } = require("withings-node-oauth2");
+```
+
+</details>
+
+## Architecture
+
+The client is a thin **composition root** over a layered core. Each layer has a
+single responsibility and is independently testable; each is swappable.
+
+```
+WithingsClient (composition root, resource namespaces)
+        │
+        ├─ Resources        oauth · measures · activity · workouts · sleep ·
+        │                    heart · devices · goals · notify
+        │                    (map friendly options → Withings params → typed models)
+        │
+        ├─ TokenManager      exchange · refresh (rotating, deduped) · auto-refresh
+        │      └─ TokenStore   pluggable persistence (MemoryTokenStore by default)
+        │
+        ├─ Signer            nonce fetch + HMAC-SHA256 signature
+        │
+        └─ Dispatcher        form encoding · Authorization · timeout · retry
+               │             (backoff + jitter) · Retry-After · envelope unwrap ·
+               │             error classification · lifecycle hooks
+               └─ Transport   a single HTTP round-trip (FetchTransport by default)
+```
+
+Everything below the resources is exported, so you can compose or replace pieces
+(see [Extending](#extending-transport-storage-hooks)).
+
+## Authentication & token management
+
+Two modes, freely mixed:
+
+### Managed session (recommended)
+
+Store tokens on the client and let it refresh them automatically. Provide
+`onTokenRefresh` (or a custom [`TokenStore`](#extending-transport-storage-hooks))
+to persist rotated tokens — **refresh tokens are single-use and rotate on every
+refresh**.
+
+```ts
+const wc = new WithingsClient({
+  clientId,
+  clientSecret,
+  callbackURL,
+  tokens: {
+    accessToken: stored.accessToken,
+    refreshToken: stored.refreshToken,
+    expiresAt: stored.expiresAt, // ms epoch → enables proactive refresh
+  },
+  onTokenRefresh: (t) => db.saveTokens(t), // persist rotated tokens
+});
+
+const sleep = await wc.sleep.summary(); // token refreshed automatically if stale
+```
+
+If Withings rejects a call with an auth error (e.g. the token was revoked
+server-side), the client refreshes once and retries transparently.
+
+### Stateless / explicit token
+
+Pass `accessToken` to any resource method to use it directly (no refresh is
+attempted for that call):
+
+```ts
+await wc.measures.list({ accessToken, types: [1] });
+```
+
+Manual control is available too:
+
+```ts
+await wc.setTokens({ accessToken, refreshToken });
+const fresh = await wc.oauth.refresh(); // rotates + persists
+const current = await wc.getTokens();
+await wc.clearTokens();
+```
+
+## Resources
+
+Every method returns the endpoint's typed **`body`** and throws a typed error on
+failure. All accept `{ accessToken?, signal? }` plus endpoint-specific options.
+Dates accept a `Date`, epoch seconds/ms, or an ISO / `YYYY-MM-DD` string.
+
+| Namespace     | Methods                                            |
+| ------------- | -------------------------------------------------- |
+| `wc.oauth`    | `authorizeUrl` · `exchangeCode` · `refresh`        |
+| `wc.measures` | `list` · `paginate`                                |
+| `wc.activity` | `daily` · `paginate` · `intraday`                  |
+| `wc.workouts` | `list` · `paginate`                                |
+| `wc.sleep`    | `summary` · `paginate` · `get`                     |
+| `wc.heart`    | `list` · `paginate` · `get` (ECG signal)           |
+| `wc.devices`  | `list`                                             |
+| `wc.goals`    | `get`                                              |
+| `wc.notify`   | `subscribe` · `get` · `list` · `update` · `revoke` |
+
+```ts
+// Body measurements. `from`/`to` are converted to epoch seconds for you.
+const { measuregrps } = await wc.measures.list({
+  types: [MeasureType.Weight, MeasureType.FatRatio],
+  from: new Date("2024-01-01"),
+  to: new Date(),
+});
+
+// Daily activity / workouts / sleep default to the last 30 days.
+const activity = await wc.activity.daily({ from: "2024-06-01" });
+const workouts = await wc.workouts.list();
+const nights = await wc.sleep.summary();
+
+// Heart / ECG.
+const { series } = await wc.heart.list({ from: 1704067200 });
+const ecg = await wc.heart.get({ signalId: series[0].ecg!.signalid });
+```
+
+## Pagination
+
+Every list resource exposes `paginate()`, an async iterator that transparently
+follows Withings' `more` / `offset` cursor — no manual offset bookkeeping:
+
+```ts
+for await (const group of wc.measures.paginate({
+  types: [MeasureType.Weight],
+})) {
+  console.log(group.date, group.measures);
+}
+
+// Also: wc.activity.paginate(), wc.workouts.paginate(),
+//       wc.sleep.paginate(), wc.heart.paginate()
+```
+
+## Notify / webhooks
+
+Subscribe a public HTTPS callback (registered in your app dashboard) to receive
+push updates instead of polling. The nonce/signature is handled for you.
+
+```ts
+import { NotifyAppli } from "withings-node-oauth2";
+
+await wc.notify.subscribe({
+  callbackUrl: "https://hooks.example.com/withings",
+  appli: NotifyAppli.Weight,
+  comment: "Weigh-ins",
+});
+
+const { profiles } = await wc.notify.list();
+await wc.notify.revoke({
+  callbackUrl: "https://hooks.example.com/withings",
+  appli: NotifyAppli.Weight,
 });
 ```
 
-Make sure you replace the above values(clientId, clientSecret, and callbackURL) with your withings application details. If you don't have a withings developer account yet, go read [Create your developer account](https://developer.withings.com/developer-guide/v3/integration-guide/public-health-data-api/developer-account/create-your-accesses-no-medical-cloud) and follow the instruction.
+Withings then POSTs `application/x-www-form-urlencoded` events (`userid`,
+`appli`, `startdate`, `enddate`) to your callback — typed as `NotifyEvent`.
 
-### Methods
-#### getAuthorizeURL
+## Error handling
 
-```js
-getAuthorizeURL(state: string, scope: string): string
-```
-This method takes two strings (`state`, and `scope`). `state` is a value you define. It will be bound to the returned auth URL as a url query which can be used to make sure that the the redirect back to your site or app was not spoofed. `scope` Is a comma-separated list of permission scopes you want to ask your user for. Click [here](https://developer.withings.com/developer-guide/v3/data-api/all-available-health-data) to see the Index Data API section from withings to know which scope you should use.
+Every failure throws a `WithingsError` (or a subclass), so you can `catch` one
+type and branch precisely:
 
-#### getAccessToken
+| Class                    | Thrown when                                                       | Retried?   |
+| ------------------------ | ----------------------------------------------------------------- | ---------- |
+| `WithingsError`          | Base class / any non-zero Withings `status`.                      | —          |
+| `WithingsAuthError`      | Invalid/expired token, signature, nonce, or scope (401/283/342…). | on 283/401 |
+| `WithingsRateLimitError` | Withings `601` rate limit (has `retryAfter`).                     | yes        |
+| `WithingsTimeoutError`   | Request exceeded `timeoutMs`.                                     | yes        |
+| `WithingsNetworkError`   | Transport failure (DNS, reset, offline) — no HTTP response.       | yes        |
+| `WithingsAbortError`     | You aborted via your own `AbortSignal`.                           | never      |
 
-```js
-getAccessToken(code: string): Promise<Object>
-```
-`getAuthorizeURL will redirect to your callback URL with a code query attached to it. That is your authorization code which can be used to request an access token.
+```ts
+import {
+  WithingsError,
+  WithingsAuthError,
+  WithingsRateLimitError,
+} from "withings-node-oauth2";
 
-This method will require the authorization code and will return the following payload
-
-```json
-{
-    "status": 0,
-    "body": {
-        "userid": "user-id",
-        "access_token": "access-token",
-        "refresh_token": "refresh-token",
-        "scope": "requested scopes",
-        "expires_in": 10800,
-        "token_type": "Bearer"
-    }
-}
-```
-You will mostly need the access_token to make further requests to withings server.
-
-PS: Withings uses the status 0 to mean a successful response.
-
-#### refreshAccessToken
-
-```js
-refreshAccessToken(refreshToken: string): Promise<Object>
-```
-If user's access token has expired, this is the method you will need to get a new access_token and be able to make requests again.
-PS: This also returns a new refresh token so you will need to overwrite the current one.
-
-It will return the following payload
-
-```json
-{
-    "status": 0,
-    "body": {
-        "userid": "user-id",
-        "access_token": "new access-token",
-        "refresh_token": "new refresh-token",
-        "scope": "requested scopes",
-        "expires_in": 10800,
-        "token_type": "Bearer"
-    }
-}
-```
-
-#### getUserDevices
-
-```js
-getUserDevices(accessToken: string): Promise<Object>
-```
-Returns the list of user linked devices.
-
-Example response
-
-```json
-{
-  "status": 0,
-  "body": {
-    "devices": [
-      {
-        "type": "Scale",
-        "model": "Body Cardio",
-        "model_id": 6,
-        "battery": "medium",
-        "deviceid": "892359876fd8805ac45bab078c4828692f0276b1",
-        "hash_deviceid": "892359876fd8805ac45bab078c4828692f0276b1",
-        "timezone": "Europe/Paris",
-        "last_session_date": 1594159644
-      }
-    ]
+try {
+  await wc.measures.list();
+} catch (err) {
+  if (err instanceof WithingsRateLimitError) {
+    console.log(`Rate limited; retry after ${err.retryAfter}s`);
+  } else if (err instanceof WithingsAuthError) {
+    // Invalid/expired token, signature, or nonce.
+  } else if (err instanceof WithingsError) {
+    console.error(err.status, err.httpStatus, err.message);
   }
 }
 ```
 
-#### getUserGoals
+The client retries transient failures (HTTP 5xx/429, timeouts, network errors,
+and Withings' `601`) automatically with exponential backoff + jitter, honoring
+`Retry-After`. Error messages are enriched from a built-in
+[status-code catalog](https://developer.withings.com/api-reference/#section/Response-status-codes)
+(`describeStatus(code)` is exported too).
 
-```js
-getUserGoals(accessToken: string): Promise<Object>
-```
+### Client-side rate limiting (opt-in)
 
-Returns the goals of a user
+To stay under Withings' documented **120 requests/minute** cap and avoid `601`s
+entirely, enable the built-in token-bucket limiter — requests transparently wait
+for a slot instead of failing:
 
-Example response
-
-```json
-{
-  "status": 0,
-  "body": {
-    "goals": {
-      "steps": 10000,
-      "sleep": 28800,
-      "weight": {
-        "value": 70500,
-        "unit": -3
-      }
-    }
-  }
-}
-```
-#### getUserMeasures
-
-```js
-getUserMeasures(accessToken: string, options?: Object): Promise<Object>
-```
-
-Returns measures at a specific date collected by a user. `options` specifies additional data to be included in the response. Click [here](https://developer.withings.com/api-reference/#operation/measure-getmeas) to see the list of available options.
-
-#### getUserActivities
-
-```js
-getUserActivities(accessToken: string, options?: Object): Promise<Object>
-```
-
-Provides user activity data of a user. To see the list of available options, click [here](https://developer.withings.com/api-reference/#operation/measurev2-getactivity).
-
-#### getUserDailyActivities
-
-```js
-getUserDailyActivities(accessToken: string, options?: Object): Promise<Object>
-```
-
-Returns user daily activity data. [Here](https://developer.withings.com/api-reference/#operation/measurev2-getintradayactivity) is a list of all possible options.
-
-#### getUserWorkouts
-
-```js
-getUserWorkouts(accessToken: string, options?: Object): Promise<Object>
-```
-
-Returns workout summaries. See [possible options](https://developer.withings.com/api-reference/#operation/measurev2-getworkouts).
-
-#### getHeartSummary
-
-```js
-getHeartSummary(accessToken: string, options?: Object): Promise<Object>
-```
-
-Returns a list of ECG records and Afib classification for a given period of time. All options can be found [here](https://developer.withings.com/api-reference/#operation/heartv2-list).
-
-#### getSleepSummary
-```js
-getSleepSummary(accessToken: string, options?: Object): Promise<Object>
-```
-
-Returns sleep activity summaries. [Here](https://developer.withings.com/api-reference/#operation/sleepv2-getsummary) is the list of available options.
-
-## Examples
-### Vanilla NodeJS
-```js
-const http = require('http');
-const url = require('url');
-const WithingsNodeOauth2 = require('withings-node-oauth2');
-
-const client = new WithingsNodeOauth2({
-    clientId: process.env.CLIENT_ID,
-    clientSecret: process.env.CLIENT_SECRET,
-    callbackURL: process.env.CALLBACK_URL
+```ts
+const wc = new WithingsClient({
+  clientId,
+  clientSecret,
+  callbackURL,
+  rateLimit: { requestsPerMinute: 100, burst: 20 }, // or pass a custom RateLimiter
 });
-
-const PORT = process.env.PORT || 5000;
-
-const server = http.createServer((req, res) => {
-    if (req.url === '/authorize' && req.method === 'GET') {
-        res.writeHead(200, {'Content-Type': 'application/json'});
-        res.write(client.getAuthorizeURL("", "info, activity, metrics"));
-        res.end();
-    } else if (req.url.startsWith('/callback') && req.method === 'GET') {
-        const { code } = url.parse(req.url, true).query;
-        client.getAccessToken(code)
-        .then((result) => {
-            res.writeHead(200, {'Content-Type': 'application/json'});
-            res.write(JSON.stringify(result));
-            res.end();
-        }).catch((error) => {
-            console.error(error);
-            res.end();
-        });
-    } else if (req.url === '/sleep' && req.method === 'GET') {
-        client.getSleepSummary('access-token')
-            .then((result) => {
-                res.writeHead(200, {'Content-Type': 'application/json'});
-                res.write(JSON.stringify(result));
-                res.end();
-            }).catch((error) => {
-                console.error(error);
-                res.end();
-            });
-    } else {
-        res.end('Route not found');
-    }
-});
-
-server.listen(PORT);
-
 ```
 
-### ExpressJS
+## Utilities
 
-```js
-const express = require('express');
-const WithingsNodeOauth2 = require('withings-node-oauth2');
-const session = require('express-session');
-require('dotenv').config();
+```ts
+import {
+  measureValue,
+  realValue,
+  parseNotifyEvent,
+} from "withings-node-oauth2";
+
+// Decode Withings' `value × 10^unit` encoding (e.g. { value: 70500, unit: -3 }).
+const { measuregrps } = await wc.measures.list({ types: [MeasureType.Weight] });
+const kg = measureValue(measuregrps[0], MeasureType.Weight); // 70.5
+
+// Parse an incoming Notify (webhook) POST body into a typed event.
+const event = parseNotifyEvent(req.body); // { userid, appli, startdate, enddate }
+```
+
+## Configuration
+
+| Option                 | Type                              | Default   | Description                                      |
+| ---------------------- | --------------------------------- | --------- | ------------------------------------------------ |
+| `clientId`             | `string`                          | —         | Withings app client id. **Required.**            |
+| `clientSecret`         | `string`                          | —         | Withings app client secret. **Required.**        |
+| `callbackURL`          | `string`                          | —         | Registered OAuth2 redirect URI. **Required.**    |
+| `tokens`               | `Tokens`                          | —         | Seed the default in-memory token store.          |
+| `tokenStore`           | `TokenStore`                      | memory    | Pluggable token persistence.                     |
+| `onTokenRefresh`       | `(t) => void`                     | —         | Persist tokens after each issue/refresh.         |
+| `retry`                | `RetryOptions \| false`           | `2` tries | Backoff + jitter on 5xx/429/601/timeout/network. |
+| `rateLimit`            | `RateLimitOptions \| RateLimiter` | off       | Opt-in client-side throttle (token bucket).      |
+| `timeoutMs`            | `number`                          | `30000`   | Per-request timeout (via `AbortSignal`).         |
+| `refreshLeewaySeconds` | `number`                          | `60`      | Refresh this many seconds before `expiresAt`.    |
+| `hooks`                | `Hooks`                           | —         | `onRequest` / `onResponse` / `onRetry`.          |
+| `transport`            | `Transport`                       | fetch     | Inject a custom HTTP transport.                  |
+| `fetch`                | `typeof fetch`                    | global    | Custom `fetch` for the default transport.        |
+| `clock`                | `Clock`                           | system    | Injectable time source (deterministic tests).    |
+
+## Extending: transport, storage, hooks
+
+The core interfaces are exported, so you can adapt the client to your stack.
+
+```ts
+import type { TokenStore, Transport, Hooks } from "withings-node-oauth2";
+
+// Persist tokens in Redis.
+const tokenStore: TokenStore = {
+  get: () => redis.getJSON("withings:tokens"),
+  set: (t) => redis.setJSON("withings:tokens", t),
+  clear: () => redis.del("withings:tokens"),
+};
+
+// Observe every request (logging / tracing / metrics).
+const hooks: Hooks = {
+  onResponse: ({ url, httpStatus, durationMs }) =>
+    logger.info({ url, httpStatus, durationMs }, "withings"),
+  onRetry: ({ url, attempt, delayMs }) =>
+    logger.warn({ url, attempt, delayMs }, "withings retry"),
+};
+
+const wc = new WithingsClient({
+  clientId,
+  clientSecret,
+  callbackURL,
+  tokenStore,
+  hooks,
+});
+```
+
+You can also pass a custom `transport` (route through a proxy or a different
+HTTP library) or `clock` (deterministic time in tests).
+
+## Framework example (Express)
+
+```ts
+import express from "express";
+import { WithingsClient, Scope } from "withings-node-oauth2";
 
 const app = express();
-
-app.use(express.json());
-app.use(session({
-    secret: process.env.SESSION_SECRET,
-    resave: true,
-    saveUninitialized: true
-}));
-
-const PORT = process.env.PORT || 3000;
-
-const client = new WithingsNodeOauth2({
-    clientId: process.env.CLIENT_ID,
-    clientSecret: process.env.CLIENT_SECRET,
-    callbackURL: process.env.CALLBACK_URL
+const wc = new WithingsClient({
+  clientId: process.env.WITHINGS_CLIENT_ID!,
+  clientSecret: process.env.WITHINGS_CLIENT_SECRET!,
+  callbackURL: process.env.WITHINGS_CALLBACK_URL!,
+  onTokenRefresh: (t) => saveTokensToDb(t),
 });
 
-app.get('/authorize', (req, res) => {
-    res.redirect(client.getAuthorizeURL("", "info, activity, metrics"));
+app.get("/authorize", (_req, res) => {
+  res.redirect(wc.oauth.authorizeUrl({ scope: [Scope.Info, Scope.Activity] }));
 });
 
-app.get('/callback', (req, res) => {
-    client.getAccessToken(req.query.code)
-        .then(result => {
-            req.session.withings = {
-                accessToken: result.body.access_token,
-                refreshToken: result.body.refresh_token,
-                userId: result.body.userid
-            };
-            res.status(200).json(result);
-        }).catch(error => {
-            res.status(error.status).json(error)
-        });
+app.get("/callback", async (req, res, next) => {
+  try {
+    const tokens = await wc.oauth.exchangeCode(String(req.query.code));
+    res.json({ userId: tokens.userId });
+  } catch (err) {
+    next(err);
+  }
 });
 
-app.get('/activity', (req, res) => {
-    client.getUserActivities(req.session.withings.accessToken)
-        .then(result => {
-            res.status(200).json(result);
-        }).catch(error => {
-            res.status(error.status).json(error);
-        });
+app.get("/activity", async (_req, res, next) => {
+  try {
+    res.json(await wc.activity.daily());
+  } catch (err) {
+    next(err);
+  }
 });
 
-app.listen(PORT);
-
+app.listen(3000);
 ```
+
+## Migrating from v1
+
+v2 is a ground-up TypeScript rewrite with a namespaced, resource-oriented API.
+
+| v1                                           | v2                                                |
+| -------------------------------------------- | ------------------------------------------------- |
+| `new WithingsNodeOauth2({ … })`              | `new WithingsClient({ … })` (old name aliased)    |
+| `getAuthorizeURL(state, scope)`              | `wc.oauth.authorizeUrl({ scope, state })`         |
+| `getAccessToken(code)` → `{ status, body }`  | `wc.oauth.exchangeCode(code)` → `Tokens` (throws) |
+| `refreshAccessToken(token)`                  | `wc.oauth.refresh(token?)`                        |
+| `getUserDevices(accessToken)`                | `wc.devices.list({ accessToken? })`               |
+| `getUserMeasures(accessToken, opts)`         | `wc.measures.list({ accessToken?, ...opts })`     |
+| `getUserActivities` / `getUserWorkouts`      | `wc.activity.daily` / `wc.workouts.list`          |
+| `getSleepSummary` / `getUserDailyActivities` | `wc.sleep.summary` / `wc.activity.intraday`       |
+| `getHeartSummary`                            | `wc.heart.list`                                   |
+| Check `result.status === 0` manually         | Non-zero status throws a typed `WithingsError`    |
+| `axios` dependency                           | Zero dependencies (native `fetch`, Node 20+)      |
+
+**Breaking changes to note:**
+
+1. The API is **namespaced** (`wc.measures.list()` instead of `client.getMeasures()`).
+2. Methods **return the `body`** and **throw** typed errors on non-zero status.
+3. `authorizeUrl` takes an options object and correctly URL-encodes everything
+   (v1 produced broken URLs with spaces/special chars and injected the literal
+   `"null"`).
+4. Token-session helpers (`setTokens`/`getTokens`/`clearTokens`) are now `async`
+   (they support async `TokenStore`s).
+
+The deprecated `WithingsNodeOauth2` alias is exported for a soft landing and is
+removed in v3.
+
+## Examples & API docs
+
+Runnable, type-checked examples live in [`examples/`](./examples) (Express,
+webhook receiver, pagination, and a Redis-backed `TokenStore`). Generate the full
+API reference from the source with `pnpm docs` (typedoc).
+
+## Contributing
+
+Issues and PRs welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md), the
+[code of conduct](./CODE_OF_CONDUCT.md), and the [security policy](./SECURITY.md).
+Run `pnpm check` before opening a PR.
+
+## License
+
+[MIT](./LICENSE) © Desire Kaleba
