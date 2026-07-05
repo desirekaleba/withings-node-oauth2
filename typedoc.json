@@ -1,0 +1,13 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts"],
+  "out": "docs",
+  "readme": "none",
+  "githubPages": false,
+  "excludeInternal": true,
+  "categorizeByGroup": true,
+  "navigationLinks": {
+    "GitHub": "https://github.com/desirekaleba/withings-node-oauth2",
+    "npm": "https://www.npmjs.com/package/withings-node-oauth2"
+  }
+}

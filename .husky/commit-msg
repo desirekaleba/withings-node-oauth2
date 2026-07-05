@@ -1,4 +1,23 @@
-#!/bin/sh
-. "$(dirname "$0")/_/husky.sh"
+#!/usr/bin/env sh
+# Enforce Conventional Commits (https://www.conventionalcommits.org) without a
+# dependency. Allows the standard types and an optional scope + breaking "!".
+msg=$(head -n 1 "$1")
 
-npx commitlint --edit $1
+# Let git-generated merge/revert/fixup commits through untouched.
+case "$msg" in
+  "Merge "* | "Revert "* | "fixup!"* | "squash!"*) exit 0 ;;
+esac
+
+pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .+'
+if printf '%s' "$msg" | grep -Eq "$pattern"; then
+  exit 0
+fi
+
+echo "✗ Invalid commit message:" >&2
+echo "    $msg" >&2
+echo "" >&2
+echo "  Use Conventional Commits, e.g.:" >&2
+echo "    feat: add sleep pagination" >&2
+echo "    fix(oauth): url-encode the state parameter" >&2
+echo "  Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert" >&2
+exit 1

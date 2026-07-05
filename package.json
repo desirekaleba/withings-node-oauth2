@@ -1,12 +1,54 @@
 {
   "name": "withings-node-oauth2",
-  "version": "1.0.0",
-  "description": "A NodeJS Client OAuth2 API for withings",
-  "main": "lib/index.js",
+  "version": "2.0.0",
+  "description": "A modern, fully-typed, zero-dependency Node.js client for the Withings OAuth2 Health Data & Notify (webhook) API.",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "prepare": "husky install",
-    "test": "jest",
-    "audit:ci": "audit-ci --high --report-type full"
+    "build": "npm run clean && npm run build:esm && npm run build:cjs && node scripts/build-cjs-pkg.mjs",
+    "build:esm": "tsc -p tsconfig.build.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "clean": "rm -rf dist coverage",
+    "typecheck": "tsc --noEmit",
+    "typecheck:examples": "tsc -p tsconfig.examples.json",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "docs": "typedoc",
+    "audit:ci": "audit-ci --high --report-type full",
+    "check": "npm run typecheck && npm run typecheck:examples && npm run lint && npm run format:check && npm run test:coverage && npm run build",
+    "prepublishOnly": "npm run clean && npm run check",
+    "prepare": "husky"
   },
   "repository": {
     "type": "git",
@@ -14,9 +56,27 @@
   },
   "keywords": [
     "withings",
+    "withings-api",
     "oauth2",
-    "client-api",
-    "auth"
+    "oauth",
+    "health",
+    "healthkit",
+    "fitness",
+    "wearables",
+    "quantified-self",
+    "sleep",
+    "activity",
+    "heart-rate",
+    "ecg",
+    "blood-pressure",
+    "weight",
+    "smart-scale",
+    "webhook",
+    "notify",
+    "api-client",
+    "typescript",
+    "nodejs",
+    "zero-dependency"
   ],
   "author": "Desire Kaleba <desirekaleba@gmail.com>",
   "license": "MIT",
@@ -24,18 +84,32 @@
     "url": "https://github.com/desirekaleba/withings-node-oauth2/issues"
   },
   "homepage": "https://github.com/desirekaleba/withings-node-oauth2#readme",
-  "dependencies": {
-    "axios": "^1.6.0"
-  },
   "devDependencies": {
-    "@commitlint/cli": "^17.1.2",
-    "@commitlint/config-conventional": "^17.1.0",
-    "audit-ci": "^6.3.0",
-    "husky": "^8.0.1",
-    "lint-staged": "^13.0.3"
+    "@eslint/js": "^10.0.1",
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.13.2",
+    "@vitest/coverage-v8": "^4.1.9",
+    "audit-ci": "^7.1.0",
+    "eslint": "^10.6.0",
+    "eslint-config-prettier": "^10.1.8",
+    "express": "^5.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8",
+    "prettier": "^3.9.4",
+    "tsx": "^4.23.0",
+    "typedoc": "^0.28.19",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.62.1",
+    "vite": "^8.1.3",
+    "vitest": "^4.1.9"
   },
   "lint-staged": {
-    "*.ts": "eslint",
-    "*.js": "eslint"
- }
+    "*.{ts,js,mjs,cjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
 }
