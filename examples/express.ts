@@ -6,6 +6,7 @@
  */
 import { randomUUID } from "node:crypto";
 import express from "express";
+import "dotenv/config";
 import {
   WithingsClient,
   Scope,

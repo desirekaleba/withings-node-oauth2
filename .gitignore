@@ -105,3 +105,6 @@ dist
 
 # Typedoc output
 docs
+
+# Local token cache written by examples/dashboard.ts
+.tokens.json

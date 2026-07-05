@@ -462,9 +462,21 @@ removed in v3.
 
 ## Examples & API docs
 
-Runnable, type-checked examples live in [`examples/`](./examples) (Express,
-webhook receiver, pagination, and a Redis-backed `TokenStore`). Generate the full
-API reference from the source with `pnpm docs` (typedoc).
+Runnable, type-checked examples live in [`examples/`](./examples): focused ones
+for the OAuth flow (Express), webhooks, pagination, and a Redis-backed
+`TokenStore` — plus a **[live dashboard](./examples/dashboard.ts)** that exercises
+_everything_ in one page.
+
+**Try it live in ~2 minutes:** copy [`.env.example`](./.env.example) to `.env`
+with your Withings app credentials, then:
+
+```sh
+pnpm build && npx tsx examples/dashboard.ts   # open http://localhost:3000 → Connect
+```
+
+You'll see the OAuth flow, every data resource, pagination, token refresh, and
+the utilities all light up as live calls to Withings. Generate the full API
+reference from source with `pnpm docs` (typedoc).
 
 ## Contributing
 

@@ -5,6 +5,7 @@
  * normalizes them into a typed `NotifyEvent`.
  */
 import express from "express";
+import "dotenv/config";
 import {
   WithingsClient,
   NotifyAppli,
