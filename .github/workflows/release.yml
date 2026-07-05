@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
 
+# Never run two publishes at once.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   id-token: write # required for npm provenance
@@ -13,14 +18,37 @@ jobs:
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
+    # Manual approval gate: the `release` environment must require reviewers and
+    # holds NPM_TOKEN, so a pushed tag cannot publish without a human approving
+    # the deployment, and no other workflow run can read the token.
+    environment: release
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # need history to prove the tag is on main
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           registry-url: "https://registry.npmjs.org"
           cache: pnpm
+
+      # Refuse to publish a tag that isn't reachable from main (i.e. code that
+      # didn't go through a reviewed PR) or whose name doesn't match the version.
+      - name: Guard — tag must be on main and match package.json
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "::error::Refusing to publish — ${GITHUB_REF_NAME} is not on main."
+            exit 1
+          fi
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "v${PKG}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json (v${PKG})."
+            exit 1
+          fi
+          echo "Guard passed: ${GITHUB_REF_NAME} is on main and matches v${PKG}."
+
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
       - name: Publish
