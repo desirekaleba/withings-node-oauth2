@@ -10,6 +10,7 @@
 [![Types](https://img.shields.io/npm/types/withings-node-oauth2.svg?logo=typescript)](https://www.npmjs.com/package/withings-node-oauth2)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](https://www.npmjs.com/package/withings-node-oauth2?activeTab=dependencies)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](./LICENSE)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/desirekaleba)
 
 </div>
 
@@ -68,6 +69,7 @@ for await (const night of wc.sleep.paginate()) {
 - [Framework example (Express)](#framework-example-express)
 - [Migrating from v1](#migrating-from-v1)
 - [Contributing](#contributing)
+- [Support](#support)
 - [License](#license)
 
 ## Install
@@ -483,6 +485,12 @@ reference from source with `pnpm docs` (typedoc).
 Issues and PRs welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md), the
 [code of conduct](./CODE_OF_CONDUCT.md), and the [security policy](./SECURITY.md).
 Run `pnpm check` before opening a PR.
+
+## Support
+
+If this package saved you time, you can
+[**buy me a coffee**](https://www.buymeacoffee.com/desirekaleba) ☕ — it's
+appreciated and helps keep the library maintained. Starring the repo helps too.
 
 ## License
 
