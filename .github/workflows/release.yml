@@ -3,6 +3,11 @@ name: Release
 on:
   push:
     branches: [main]
+  # Manual fallback: publish the current main version on demand. Needed to
+  # recover when an automated publish fails — re-running the push-triggered run
+  # won't work, because release-please only sets `release_created` once (on the
+  # push that merges the release PR).
+  workflow_dispatch: {}
 
 concurrency:
   group: release-${{ github.ref }}
@@ -14,6 +19,7 @@ jobs:
   # the git tag and the GitHub Release, and flips `release_created` to true.
   release-please:
     name: Prepare release
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write # release commits, tags, GitHub Releases
@@ -25,12 +31,13 @@ jobs:
       - uses: googleapis/release-please-action@v5
         id: rp
 
-  # Only runs when a release was just cut. Publishes to npm behind the
-  # manual-approval `release` environment, which also isolates NPM_TOKEN.
+  # Publishes to npm behind the manual-approval `release` environment (which also
+  # isolates NPM_TOKEN). Runs when release-please just cut a release, OR on a
+  # manual `workflow_dispatch` (the recovery path).
   publish:
     name: Publish to npm
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    if: ${{ always() && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     environment: release
     permissions:
