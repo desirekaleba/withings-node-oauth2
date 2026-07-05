@@ -29,6 +29,7 @@
   "engines": {
     "node": ">=20"
   },
+  "packageManager": "pnpm@11.8.0",
   "scripts": {
     "build": "npm run clean && npm run build:esm && npm run build:cjs && node scripts/build-cjs-pkg.mjs",
     "build:esm": "tsc -p tsconfig.build.json",
