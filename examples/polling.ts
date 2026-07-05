@@ -2,6 +2,7 @@
  * Poll and page through historical data with the async-iterator API, and
  * observe requests via lifecycle hooks.
  */
+import "dotenv/config";
 import { WithingsClient, MeasureType } from "withings-node-oauth2";
 
 const wc = new WithingsClient({
