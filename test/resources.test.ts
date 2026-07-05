@@ -213,6 +213,18 @@ describe("devices / goals", () => {
     expect(body.goals.steps).toBe(10000);
     expect(calls[0].params.get("action")).toBe("getgoals");
   });
+
+  it("goals.get normalizes an empty goals array to an object", async () => {
+    // Withings returns `goals: []` for accounts with no goals set.
+    const { fetch } = createMockFetch(
+      routeByAction({
+        getgoals: { json: { status: 0, body: { goals: [] } } },
+      }),
+    );
+    const body = await client(fetch).goals.get();
+    expect(Array.isArray(body.goals)).toBe(false);
+    expect(body.goals).toEqual({});
+  });
 });
 
 describe("notify", () => {
