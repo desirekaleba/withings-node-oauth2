@@ -2,64 +2,51 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
 
-# Never run two publishes at once.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  contents: write # create the GitHub Release for the tag
-  id-token: write # required for npm provenance
-
 jobs:
+  # release-please watches Conventional Commits on main and maintains a "release
+  # PR" that bumps the version + updates CHANGELOG.md. Merging that PR creates
+  # the git tag and the GitHub Release, and flips `release_created` to true.
+  release-please:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # release commits, tags, GitHub Releases
+      pull-requests: write # open/maintain the release PR
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: rp
+
+  # Only runs when a release was just cut. Publishes to npm behind the
+  # manual-approval `release` environment, which also isolates NPM_TOKEN.
   publish:
     name: Publish to npm
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
     runs-on: ubuntu-latest
-    # Manual approval gate: the `release` environment must require reviewers and
-    # holds NPM_TOKEN, so a pushed tag cannot publish without a human approving
-    # the deployment, and no other workflow run can read the token.
     environment: release
+    permissions:
+      contents: read
+      id-token: write # npm provenance
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0 # need history to prove the tag is on main
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           registry-url: "https://registry.npmjs.org"
           cache: pnpm
-
-      # Refuse to publish a tag that isn't reachable from main (i.e. code that
-      # didn't go through a reviewed PR) or whose name doesn't match the version.
-      - name: Guard — tag must be on main and match package.json
-        run: |
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
-            echo "::error::Refusing to publish — ${GITHUB_REF_NAME} is not on main."
-            exit 1
-          fi
-          PKG="$(node -p "require('./package.json').version")"
-          if [ "v${PKG}" != "${GITHUB_REF_NAME}" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json (v${PKG})."
-            exit 1
-          fi
-          echo "Guard passed: ${GITHUB_REF_NAME} is on main and matches v${PKG}."
-
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
       - name: Publish
         run: pnpm publish --no-git-checks --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      # Only runs if the publish above succeeded. Cuts a GitHub Release for the
-      # tag with auto-generated notes and marks it the latest.
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
-        with:
-          generate_release_notes: true
-          make_latest: true
